@@ -1,0 +1,31 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sales_backend
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    env_file:
+      - .env
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor
+    networks:
+      - sales_network
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: sales_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - sales_network
+
+networks:
+  sales_network:
+    driver: bridge

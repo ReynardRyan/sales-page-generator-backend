@@ -82,8 +82,9 @@ PROMPT;
         ]);
 
         if ($response->failed()) {
+            $errorMessage = $response->json('error.message') ?? 'AI generation failed. Please try again.';
             Log::error('OpenAI API error', ['response' => $response->body()]);
-            throw new \RuntimeException('AI generation failed. Please try again.');
+            throw new \RuntimeException($errorMessage);
         }
 
         $content = $response->json('choices.0.message.content');
@@ -93,21 +94,22 @@ PROMPT;
 
     private function generateWithGemini(string $prompt): array
     {
+        $model = config('ai.gemini.model', 'gemini-2.0-flash');
         $response = Http::withHeaders([
             'Content-Type' => 'application/json',
-        ])->post('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' . config('ai.gemini.key'), [
+        ])->post('https://generativelanguage.googleapis.com/v1/models/' . $model . ':generateContent?key=' . config('ai.gemini.key'), [
             'contents' => [
                 ['parts' => [['text' => $prompt]]],
             ],
             'generationConfig' => [
                 'temperature' => 0.7,
-                'responseMimeType' => 'application/json',
             ],
         ]);
 
         if ($response->failed()) {
+            $errorMessage = $response->json('error.message') ?? 'AI generation failed. Please try again.';
             Log::error('Gemini API error', ['response' => $response->body()]);
-            throw new \RuntimeException('AI generation failed. Please try again.');
+            throw new \RuntimeException($errorMessage);
         }
 
         $content = $response->json('candidates.0.content.parts.0.text');
