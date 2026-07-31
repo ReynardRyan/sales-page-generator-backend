@@ -20,8 +20,21 @@ class AiGenerationService
 
         return match ($this->provider) {
             'gemini' => $this->generateWithGemini($prompt),
+            'sumopod', 'mimo' => $this->generateWithSumopod($prompt),
             default => $this->generateWithOpenAi($prompt),
         };
+    }
+
+    /**
+     * Base HTTP client for AI calls. Laravel's default 30s timeout is too short
+     * for reasoning models, which spend most of that budget before emitting a
+     * single byte, so every provider call gets an explicit timeout.
+     */
+    private function http(array $headers): \Illuminate\Http\Client\PendingRequest
+    {
+        return Http::withHeaders($headers)
+            ->connectTimeout((int) config('ai.connect_timeout', 15))
+            ->timeout((int) config('ai.timeout', 180));
     }
 
     private function buildPrompt(array $data): string
@@ -62,7 +75,7 @@ PROMPT;
 
     private function generateWithOpenAi(string $prompt): array
     {
-        $response = Http::withHeaders([
+        $response = $this->http([
             'Authorization' => 'Bearer ' . config('ai.openai.key'),
             'Content-Type' => 'application/json',
         ])->post('https://api.openai.com/v1/chat/completions', [
@@ -95,7 +108,7 @@ PROMPT;
     private function generateWithGemini(string $prompt): array
     {
         $model = config('ai.gemini.model', 'gemini-2.0-flash');
-        $response = Http::withHeaders([
+        $response = $this->http([
             'Content-Type' => 'application/json',
         ])->post('https://generativelanguage.googleapis.com/v1/models/' . $model . ':generateContent?key=' . config('ai.gemini.key'), [
             'contents' => [
@@ -113,6 +126,45 @@ PROMPT;
         }
 
         $content = $response->json('candidates.0.content.parts.0.text');
+
+        return json_decode($content, true) ?? $this->getFallbackContent();
+    }
+
+    private function generateWithSumopod(string $prompt): array
+    {
+        $baseUrl = config('ai.sumopod.base_url', 'https://ai.sumopod.com/v1');
+        $model = config('ai.sumopod.model', 'deepseek-v4-pro');
+        $apiKey = config('ai.sumopod.key', '');
+
+        $headers = ['Content-Type' => 'application/json'];
+        if (!empty($apiKey)) {
+            $headers['Authorization'] = 'Bearer ' . $apiKey;
+        }
+
+        $response = $this->http($headers)->post($baseUrl . '/chat/completions', [
+            'model' => $model,
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => 'You are an expert copywriter. Always respond with valid JSON only.',
+                ],
+                [
+                    'role' => 'user',
+                    'content' => $prompt,
+                ],
+            ],
+            'temperature' => 0.7,
+            'max_tokens' => 16000,
+            'response_format' => ['type' => 'json_object'],
+        ]);
+
+        if ($response->failed()) {
+            $errorMessage = $response->json('error.message') ?? 'Sumopod AI generation failed. Please try again.';
+            Log::error('Sumopod API error', ['response' => $response->body()]);
+            throw new \RuntimeException($errorMessage);
+        }
+
+        $content = $response->json('choices.0.message.content');
 
         return json_decode($content, true) ?? $this->getFallbackContent();
     }

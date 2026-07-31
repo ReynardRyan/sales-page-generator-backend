@@ -9,6 +9,9 @@ touch /var/www/html/database/database.sqlite
 chown -R www-data:www-data /var/www/html/storage /var/www/html/database
 chmod -R 775 /var/www/html/storage /var/www/html/database
 
+# Clear bootstrap cache (services/packages) to avoid stale references
+rm -f /var/www/html/bootstrap/cache/*.php
+
 # Run migrations and seed
 php artisan migrate --force
 php artisan db:seed --force
